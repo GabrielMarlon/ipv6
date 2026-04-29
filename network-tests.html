@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>netdiag · testes de rede</title>
+<meta name="description" content="Teste completo de conectividade IPv4, IPv6, DNS e performance.">
+<meta property="og:title" content="netdiag · testes de rede">
+<meta property="og:description" content="Diagnóstico dual-stack: IPv4, IPv6, DNS/AAAA, protocolo preferido e performance MTU.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:        #0a0b0d;
+    --surface:   #121418;
+    --surface-2: #181b21;
+    --border:    #262a31;
+    --text:      #e8e6e3;
+    --text-dim:  #7a7d83;
+    --text-muted:#4a4d53;
+    --accent:    #5eead4;
+    --accent-dim:#2db8a0;
+    --v6:        #5eead4;
+    --v4:        #fbbf24;
+    --good:      #4ade80;
+    --warn:      #fb923c;
+    --bad:       #f87171;
+  }
+
+  html { color-scheme: dark; }
+
+  body {
+    font-family: 'DM Mono', ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+    font-size: 14px;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-attachment: fixed;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(10,11,13,0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-brand {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+
+  .nav-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(94,234,212,0.6);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(94,234,212,0.55); }
+    50%      { box-shadow: 0 0 0 6px rgba(94,234,212,0); }
+  }
+
+  .nav-links { display: flex; gap: 4px; list-style: none; }
+
+  .nav-links a {
+    display: block;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+  }
+
+  .nav-links a:hover,
+  .nav-links a.active {
+    color: var(--accent);
+    border-color: rgba(94,234,212,0.25);
+    background: rgba(94,234,212,0.05);
+  }
+
+  /* ── CONTENT ── */
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* page header */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 56px;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .page-title-block {}
+
+  .page-tag {
+    font-size: 10px;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .page-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(28px, 5vw, 42px);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .live {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    flex-shrink: 0;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--good);
+    animation: livepulse 2s ease-in-out infinite;
+  }
+
+  @keyframes livepulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }
+    50%      { box-shadow: 0 0 0 7px rgba(74,222,128,0); }
+  }
+
+  /* ── SCORE ── */
+  .hero {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+
+  .hero-label {
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+
+  .score {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(110px, 24vw, 220px);
+    font-weight: 400;
+    line-height: 0.85;
+    letter-spacing: -0.04em;
+    margin-bottom: 24px;
+    transition: color 0.6s ease;
+    color: var(--text-muted);
+  }
+
+  .score .denom {
+    color: var(--text-muted);
+    font-size: 0.32em;
+    margin-left: 0.05em;
+    vertical-align: top;
+    position: relative;
+    top: 0.2em;
+  }
+
+  .score.good    { color: var(--v6); }
+  .score.partial { color: var(--v4); }
+  .score.bad     { color: var(--bad); }
+
+  .verdict {
+    font-size: 14px;
+    color: var(--text-dim);
+    max-width: 540px;
+    margin: 0 auto;
+    min-height: 22px;
+    font-style: italic;
+  }
+
+  .verdict strong { color: var(--text); font-weight: 500; font-style: normal; }
+
+  /* ── TESTS GRID ── */
+  .tests {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+
+  @media (max-width: 640px) {
+    .tests { grid-template-columns: 1fr; }
+  }
+
+  .test {
+    background: var(--surface);
+    padding: 26px 24px;
+    transition: background 0.25s ease;
+  }
+
+  .test:hover { background: var(--surface-2); }
+  .test.full  { grid-column: 1 / -1; }
+
+  .test-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .test-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .badge {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border: 1px solid currentColor;
+    border-radius: 1px;
+    color: var(--text-muted);
+  }
+
+  .badge.ok   { color: var(--good); }
+  .badge.fail { color: var(--bad); }
+  .badge.warn { color: var(--warn); }
+
+  .test-value {
+    font-size: 17px;
+    font-weight: 400;
+    word-break: break-all;
+    margin-bottom: 14px;
+    min-height: 26px;
+    color: var(--text);
+  }
+
+  .test[data-id="ipv4"] .test-value.has-value { color: var(--v4); }
+  .test[data-id="ipv6"] .test-value.has-value { color: var(--v6); }
+
+  .test-meta { font-size: 12px; color: var(--text-dim); }
+
+  .test-meta .row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 3px 0;
+    border-top: 1px dashed transparent;
+  }
+
+  .test-meta .row span:first-child { color: var(--text-muted); }
+  .test-meta .row span:last-child  { text-align: right; word-break: break-all; }
+
+  /* skeleton */
+  .skeleton {
+    display: inline-block;
+    background: linear-gradient(90deg, var(--surface-2) 0%, var(--border) 50%, var(--surface-2) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 2px;
+    color: transparent !important;
+    user-select: none;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ── SUMMARY ── */
+  .summary {
+    border: 1px solid var(--border);
+    padding: 32px;
+    background: var(--surface);
+    margin-bottom: 32px;
+  }
+
+  .summary h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    font-weight: 400;
+  }
+
+  .summary-text {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(18px, 2.4vw, 22px);
+    line-height: 1.4;
+    color: var(--text);
+    font-style: italic;
+  }
+
+  .summary-tips {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .summary-tips ul { list-style: none; }
+
+  .summary-tips li { padding: 5px 0; }
+  .summary-tips li::before { content: '→ '; color: var(--text-muted); margin-right: 4px; }
+
+  /* ── ACTIONS ── */
+  .actions { text-align: center; margin-top: 40px; }
+
+  .btn-rerun {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 13px 32px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-rerun:hover  { border-color: var(--accent); color: var(--accent); }
+  .btn-rerun:disabled { opacity: 0.5; cursor: wait; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* ── HAMBURGER ── */
+  .nav-hamburger {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 8px;
+    transition: border-color 0.2s;
+  }
+
+  .nav-hamburger:hover { border-color: var(--accent); }
+
+  .nav-hamburger span {
+    display: block;
+    height: 1.5px;
+    background: var(--text-dim);
+    border-radius: 2px;
+    transition: transform 0.25s ease, opacity 0.2s ease, background 0.2s;
+  }
+
+  .nav-hamburger.open span { background: var(--accent); }
+  .nav-hamburger.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
+  .nav-hamburger.open span:nth-child(2) { opacity: 0; }
+  .nav-hamburger.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
+
+  @media (max-width: 640px) {
+    .nav-hamburger { display: flex; }
+
+    .nav-links {
+      display: none;
+      position: absolute;
+      top: 52px;
+      left: 0; right: 0;
+      background: rgba(10,11,13,0.97);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      flex-direction: column;
+      gap: 4px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 49;
+    }
+
+    .nav-links.open { display: flex; }
+
+    .nav-links a {
+      padding: 10px 14px;
+      font-size: 12px;
+    }
+  }
+
+  /* ── PAGE FADE ── */
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  main { animation: pageFadeIn 0.35s ease both; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">
+    <span class="nav-dot"></span>
+    netdiag
+  </a>
+  <button class="nav-hamburger" id="navHamburger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <ul class="nav-links" id="navLinks">
+    <li><a href="index.html">Início</a></li>
+    <li><a href="network-tests.html" class="active">Testes de Rede</a></li>
+  </ul>
+</nav>
+
+<main>
+  <div class="page-header">
+    <div class="page-title-block">
+      <div class="page-tag">Diagnóstico · IPv4 / IPv6</div>
+      <div class="page-title">Testes de Rede</div>
+    </div>
+    <div class="live"><span class="live-dot"></span> Live</div>
+  </div>
+
+  <section class="hero">
+    <div class="hero-label">DUAL-STACK SCORE</div>
+    <div class="score" id="score">–<span class="denom">/10</span></div>
+    <div class="verdict" id="verdict">Executando diagnósticos…</div>
+  </section>
+
+  <section class="tests">
+    <article class="test" data-id="ipv4">
+      <div class="test-head">
+        <div class="test-title">IPv4</div>
+        <div class="badge" data-badge>checking</div>
+      </div>
+      <div class="test-value" data-value><span class="skeleton">000.000.000.000</span></div>
+      <div class="test-meta" data-meta></div>
+    </article>
+
+    <article class="test" data-id="ipv6">
+      <div class="test-head">
+        <div class="test-title">IPv6</div>
+        <div class="badge" data-badge>checking</div>
+      </div>
+      <div class="test-value" data-value><span class="skeleton">::ffff:0000:0000</span></div>
+      <div class="test-meta" data-meta></div>
+    </article>
+
+    <article class="test" data-id="preferred">
+      <div class="test-head">
+        <div class="test-title">Protocolo Preferido</div>
+        <div class="badge" data-badge>checking</div>
+      </div>
+      <div class="test-value" data-value><span class="skeleton">analyzing</span></div>
+      <div class="test-meta" data-meta>Quando ambos disponíveis, qual seu sistema escolhe</div>
+    </article>
+
+    <article class="test" data-id="dns">
+      <div class="test-head">
+        <div class="test-title">DNS / AAAA</div>
+        <div class="badge" data-badge>checking</div>
+      </div>
+      <div class="test-value" data-value><span class="skeleton">resolving</span></div>
+      <div class="test-meta" data-meta>Resolução de registros AAAA via DNS-over-HTTPS</div>
+    </article>
+
+    <article class="test full" data-id="mtu">
+      <div class="test-head">
+        <div class="test-title">Performance / MTU</div>
+        <div class="badge" data-badge>checking</div>
+      </div>
+      <div class="test-value" data-value><span class="skeleton">measuring throughput</span></div>
+      <div class="test-meta" data-meta></div>
+    </article>
+  </section>
+
+  <section class="summary">
+    <h3>Diagnóstico</h3>
+    <div class="summary-text" id="summary">Aguardando resultados…</div>
+    <div class="summary-tips" id="tips" hidden><ul></ul></div>
+  </section>
+
+  <div class="actions">
+    <button class="btn-rerun" id="rerun">Re-executar testes</button>
+  </div>
+
+  <footer>HTML + JS puro · sem servidor · sem rastreamento</footer>
+</main>
+
+<script>
+  const $ = q => document.querySelector(q);
+
+  const setBadge = (el, kind, text) => {
+    const b = el.querySelector('[data-badge]');
+    b.className = 'badge ' + kind;
+    b.textContent = text;
+  };
+
+  const setVal = (el, html, isReal) => {
+    const v = el.querySelector('[data-value]');
+    v.innerHTML = html;
+    v.classList.toggle('has-value', !!isReal);
+  };
+
+  const setMeta = (el, html) => { el.querySelector('[data-meta]').innerHTML = html; };
+  const card = id => document.querySelector(`.test[data-id="${id}"]`);
+
+  const withTimeout = (p, ms = 8000) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+  ]);
+
+  async function testV4() {
+    const el = card('ipv4');
+    const t0 = performance.now();
+    try {
+      const r = await withTimeout(fetch('https://api4.ipify.org?format=json').then(r => r.json()));
+      const ms = Math.round(performance.now() - t0);
+      const ip = r.ip;
+      let extra = '';
+      try {
+        const info = await withTimeout(fetch(`https://ipapi.co/${ip}/json/`).then(r => r.json()), 5000);
+        if (info && !info.error) {
+          extra =
+            `<div class="row"><span>ISP</span><span>${info.org || info.asn || '—'}</span></div>` +
+            `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`;
+        }
+      } catch {}
+      setVal(el, ip, true);
+      setMeta(el, extra + `<div class="row"><span>Latência</span><span>${ms} ms</span></div>`);
+      setBadge(el, 'ok', 'ok');
+      return { ok: true, ip };
+    } catch {
+      setVal(el, 'sem conectividade IPv4', false);
+      setMeta(el, '<div class="row"><span>Status</span><span>fetch falhou</span></div>');
+      setBadge(el, 'fail', 'fail');
+      return { ok: false };
+    }
+  }
+
+  async function testV6() {
+    const el = card('ipv6');
+    const t0 = performance.now();
+    try {
+      const r = await withTimeout(fetch('https://api6.ipify.org?format=json').then(r => r.json()));
+      const ms = Math.round(performance.now() - t0);
+      const ip = r.ip;
+      let extra = '';
+      try {
+        const info = await withTimeout(fetch(`https://ipapi.co/${ip}/json/`).then(r => r.json()), 5000);
+        if (info && !info.error) {
+          extra =
+            `<div class="row"><span>ISP</span><span>${info.org || info.asn || '—'}</span></div>` +
+            `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`;
+        }
+      } catch {}
+      setVal(el, ip, true);
+      setMeta(el, extra + `<div class="row"><span>Latência</span><span>${ms} ms</span></div>`);
+      setBadge(el, 'ok', 'ok');
+      return { ok: true, ip };
+    } catch {
+      setVal(el, 'sem conectividade IPv6', false);
+      setMeta(el, '<div class="row"><span>Status</span><span>seu provedor não fornece IPv6, ou está bloqueado no caminho</span></div>');
+      setBadge(el, 'fail', 'unavailable');
+      return { ok: false };
+    }
+  }
+
+  async function testPreferred() {
+    const el = card('preferred');
+    try {
+      const r = await withTimeout(fetch('https://api64.ipify.org?format=json').then(r => r.json()));
+      const proto = r.ip.includes(':') ? 'IPv6' : 'IPv4';
+      setVal(el, proto, true);
+      setMeta(el,
+        `<div class="row"><span>Resolvido para</span><span>${r.ip}</span></div>` +
+        `<div class="row"><span>Significado</span><span>${proto === 'IPv6'
+          ? 'seu sistema usa IPv6 quando ambos existem ✓'
+          : 'seu sistema preferiu IPv4'}</span></div>`
+      );
+      setBadge(el, proto === 'IPv6' ? 'ok' : 'warn', proto.toLowerCase());
+      return { ok: true, proto };
+    } catch {
+      setVal(el, '—', false);
+      setBadge(el, 'fail', 'fail');
+      return { ok: false };
+    }
+  }
+
+  async function testDNS() {
+    const el = card('dns');
+    try {
+      const res = await withTimeout(fetch('https://cloudflare-dns.com/dns-query?name=ipv6.google.com&type=AAAA', {
+        headers: { 'Accept': 'application/dns-json' }
+      }).then(r => r.json()));
+      const aaaa = (res.Answer || []).filter(a => a.type === 28);
+      const ok = aaaa.length > 0;
+      setVal(el, ok ? 'AAAA resolvido' : 'sem registros AAAA', ok);
+      setMeta(el,
+        `<div class="row"><span>Query</span><span>ipv6.google.com (AAAA)</span></div>` +
+        `<div class="row"><span>Resposta</span><span>${aaaa.map(a => a.data).join(', ') || 'nenhuma'}</span></div>` +
+        `<div class="row"><span>Resolver</span><span>1.1.1.1 via DoH</span></div>`
+      );
+      setBadge(el, ok ? 'ok' : 'fail', ok ? 'ok' : 'no aaaa');
+      return { ok };
+    } catch {
+      setVal(el, 'erro DoH', false);
+      setBadge(el, 'fail', 'fail');
+      return { ok: false };
+    }
+  }
+
+  async function testMTU() {
+    const el = card('mtu');
+    try {
+      const t0 = performance.now();
+      await (await fetch('https://speed.cloudflare.com/__down?bytes=131072', { cache: 'no-store' })).arrayBuffer();
+      const ms128 = Math.round(performance.now() - t0);
+
+      const t1 = performance.now();
+      await (await fetch('https://speed.cloudflare.com/__down?bytes=1048576', { cache: 'no-store' })).arrayBuffer();
+      const ms1m = Math.round(performance.now() - t1);
+
+      const mbps = (1024 * 8) / (ms1m / 1000) / 1000;
+      const slow = ms1m > 12000;
+      const verdict = slow ? 'lento — possível problema de PMTUD' : 'transferência saudável';
+
+      setVal(el, verdict, !slow);
+      setMeta(el,
+        `<div class="row"><span>128 KB</span><span>${ms128} ms</span></div>` +
+        `<div class="row"><span>1 MB</span><span>${ms1m} ms · ${mbps.toFixed(2)} Mbps</span></div>` +
+        `<div class="row"><span>Nota</span><span>teste real de PMTUD requer ping com flag DF; isto é uma aproximação via HTTPS</span></div>`
+      );
+      setBadge(el, slow ? 'warn' : 'ok', slow ? 'slow' : 'ok');
+      return { ok: !slow, mbps };
+    } catch {
+      setVal(el, 'falha no download', false);
+      setMeta(el, '<div class="row"><span>Erro</span><span>endpoint inacessível</span></div>');
+      setBadge(el, 'fail', 'fail');
+      return { ok: false };
+    }
+  }
+
+  function calcScore(r) {
+    let s = 0;
+    if (r.v4) s += 3;
+    if (r.v6) s += 5;
+    if (r.preferred === 'IPv6') s += 2;
+    return s;
+  }
+
+  function buildVerdict(r) {
+    const tips = [];
+    let summary;
+
+    if (r.v4 && r.v6 && r.preferred === 'IPv6') {
+      summary = 'Sua conexão é dual-stack pleno e seu sistema prefere IPv6 — você está pronto para a internet moderna.';
+    } else if (r.v4 && r.v6 && r.preferred === 'IPv4') {
+      summary = 'Você tem IPv4 e IPv6, mas seu sistema escolhe IPv4. Pode haver degradação no caminho IPv6.';
+      tips.push('Verifique se o roteador anuncia rota IPv6 corretamente (RA / DHCPv6).');
+      tips.push('Teste se ipv6.google.com carrega — se sim, o problema é seletivo.');
+    } else if (r.v4 && !r.v6) {
+      summary = 'Você está apenas em IPv4. Seu provedor não está fornecendo IPv6, ou ele está bloqueado/desabilitado em algum ponto.';
+      tips.push('Pergunte ao seu provedor se IPv6 está disponível na sua região.');
+      tips.push('Verifique a configuração IPv6 no roteador — pode estar desligada por padrão.');
+    } else if (!r.v4 && r.v6) {
+      summary = 'Você está em IPv6-only — raro e moderno. Apps que dependem de IPv4 só funcionam via NAT64/DNS64.';
+    } else {
+      summary = 'Não foi possível detectar conectividade. Verifique sua rede.';
+    }
+
+    if (!r.dns) tips.push('Seu resolver DNS pode não estar retornando registros AAAA. Considere 1.1.1.1 / 2606:4700:4700::1111.');
+    return { summary, tips };
+  }
+
+  async function runAll() {
+    const btn = $('#rerun');
+    btn.disabled = true;
+    btn.textContent = 'Executando…';
+
+    ['ipv4','ipv6','preferred','dns','mtu'].forEach(id => {
+      const el = card(id);
+      setVal(el, '<span class="skeleton">measuring</span>', false);
+      setBadge(el, '', 'checking');
+    });
+
+    $('#score').innerHTML = '–<span class="denom">/10</span>';
+    $('#score').className = 'score';
+    $('#verdict').textContent = 'Executando diagnósticos…';
+    $('#summary').textContent = 'Aguardando resultados…';
+    $('#tips').hidden = true;
+
+    const [v4, v6, pref, dns] = await Promise.all([testV4(), testV6(), testPreferred(), testDNS()]);
+    const mtu = await testMTU();
+
+    const r = { v4: v4.ok, v6: v6.ok, preferred: pref.proto, dns: dns.ok, mtu: mtu.ok };
+    const score = calcScore(r);
+
+    $('#score').innerHTML = score + '<span class="denom">/10</span>';
+    $('#score').className = 'score ' + (score >= 9 ? 'good' : score >= 5 ? 'partial' : 'bad');
+
+    const { summary, tips } = buildVerdict(r);
+    $('#summary').textContent = summary;
+
+    if (tips.length) {
+      $('#tips').hidden = false;
+      $('#tips ul').innerHTML = tips.map(t => `<li>${t}</li>`).join('');
+    }
+
+    $('#verdict').innerHTML = score >= 9
+      ? '<strong>Excelente.</strong> Conectividade dual-stack moderna.'
+      : score >= 5
+      ? '<strong>Parcial.</strong> Há espaço para melhorar.'
+      : '<strong>Limitado.</strong> Conectividade restrita.';
+
+    btn.disabled = false;
+    btn.textContent = 'Re-executar testes';
+  }
+
+  $('#rerun').addEventListener('click', runAll);
+  runAll();
+
+  // hamburger
+  const hamburger = document.getElementById('navHamburger');
+  const navLinks  = document.getElementById('navLinks');
+  hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('open');
+    navLinks.classList.toggle('open');
+  });
+  navLinks.querySelectorAll('a').forEach(a =>
+    a.addEventListener('click', () => {
+      hamburger.classList.remove('open');
+      navLinks.classList.remove('open');
+    })
+  );
+</script>
+</body>
+</html>
