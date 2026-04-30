@@ -20,6 +20,34 @@ const withTimeout = (p, ms = 8000) => Promise.race([
   new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
 ]);
 
+async function getGeoInfo(ip) {
+  const key = `geo_${ip}`;
+  const cached = sessionStorage.getItem(key);
+  if (cached) return JSON.parse(cached);
+
+  // tenta ipwho.is (CORS aberto, sem chave)
+  try {
+    const d = await withTimeout(fetch(`https://ipwho.is/${ip}`).then(r => r.json()), 5000);
+    if (d && d.success) {
+      const result = { org: d.connection?.isp || d.connection?.org || '', city: d.city, country_name: d.country };
+      sessionStorage.setItem(key, JSON.stringify(result));
+      return result;
+    }
+  } catch {}
+
+  // fallback: ipinfo.io
+  try {
+    const d = await withTimeout(fetch(`https://ipinfo.io/${ip}/json`).then(r => r.json()), 5000);
+    if (d && d.org) {
+      const result = { org: d.org, city: d.city, country_name: d.country };
+      sessionStorage.setItem(key, JSON.stringify(result));
+      return result;
+    }
+  } catch {}
+
+  return null;
+}
+
 async function testV4() {
   const el = card('ipv4');
   const t0 = performance.now();
@@ -27,15 +55,11 @@ async function testV4() {
     const r = await withTimeout(fetch('https://api4.ipify.org?format=json').then(r => r.json()));
     const ms = Math.round(performance.now() - t0);
     const ip = r.ip;
-    let extra = '';
-    try {
-      const info = await withTimeout(fetch(`https://ipapi.co/${ip}/json/`).then(r => r.json()), 5000);
-      if (info && !info.error) {
-        extra =
-          `<div class="row"><span>ISP</span><span>${info.org || info.asn || '—'}</span></div>` +
-          `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`;
-      }
-    } catch {}
+    const info = await getGeoInfo(ip);
+    const extra = info
+      ? `<div class="row"><span>ISP</span><span>${info.org || '—'}</span></div>` +
+        `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`
+      : '';
     setVal(el, ip, true);
     setMeta(el, extra + `<div class="row"><span>Latência</span><span>${ms} ms</span></div>`);
     setBadge(el, 'ok', 'ok');
@@ -55,15 +79,11 @@ async function testV6() {
     const r = await withTimeout(fetch('https://api6.ipify.org?format=json').then(r => r.json()));
     const ms = Math.round(performance.now() - t0);
     const ip = r.ip;
-    let extra = '';
-    try {
-      const info = await withTimeout(fetch(`https://ipapi.co/${ip}/json/`).then(r => r.json()), 5000);
-      if (info && !info.error) {
-        extra =
-          `<div class="row"><span>ISP</span><span>${info.org || info.asn || '—'}</span></div>` +
-          `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`;
-      }
-    } catch {}
+    const info = await getGeoInfo(ip);
+    const extra = info
+      ? `<div class="row"><span>ISP</span><span>${info.org || '—'}</span></div>` +
+        `<div class="row"><span>Local</span><span>${[info.city, info.country_name].filter(Boolean).join(', ') || '—'}</span></div>`
+      : '';
     setVal(el, ip, true);
     setMeta(el, extra + `<div class="row"><span>Latência</span><span>${ms} ms</span></div>`);
     setBadge(el, 'ok', 'ok');
