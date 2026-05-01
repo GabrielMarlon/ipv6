@@ -129,12 +129,12 @@
       </li>
       <li class="legend-item">
         <span class="legend-term">Performance / MTU</span>
-        <span class="legend-desc">Mede o throughput real com downloads de 128 KB e 1 MB via HTTPS. Tempos muito altos sugerem fragmentação de pacotes por MTU mal configurado (PMTUD). Não substitui um teste com ping DF-bit.</span>
+        <span class="legend-desc">Quando <code>node server.js</code> está rodando, executa PMTUD real: busca binária com ping ICMP e flag DF (Don't Fragment) para descobrir o MTU do caminho até 8.8.8.8. Sem servidor, mede throughput via HTTPS como aproximação.</span>
       </li>
     </ul>
   </section>
 
-  <footer>HTML + JS puro · sem servidor · sem rastreamento</footer>
+  <footer>HTML + JS · servidor local opcional (<code>node server.js</code>) · sem rastreamento</footer>
 </main>
 
 <script src="js/network-tests.js"></script>

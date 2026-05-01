@@ -142,6 +142,40 @@ async function testDNS() {
 
 async function testMTU() {
   const el = card('mtu');
+
+  // Tenta teste real de PMTUD via servidor local (node server.js)
+  try {
+    const r = await withTimeout(
+      fetch('http://127.0.0.1:3000/api/pmtud').then(res => {
+        if (!res.ok) throw new Error('server error');
+        return res.json();
+      }),
+      35000
+    );
+
+    if (r && r.mtu) {
+      const badMtu = r.mtu < 1400;
+      const lowMtu = r.mtu < 1500;
+      const badge = badMtu ? 'fail' : lowMtu ? 'warn' : 'ok';
+      const warnRow = lowMtu
+        ? `<div class="row"><span>Aviso</span><span>MTU ${r.mtu} < 1500 — provável PPPoE, VPN ou túnel</span></div>`
+        : '';
+
+      setVal(el, `MTU: ${r.mtu} bytes`, !badMtu);
+      setMeta(el,
+        `<div class="row"><span>MTU descoberto</span><span>${r.mtu} bytes (payload ${r.payload} B)</span></div>` +
+        `<div class="row"><span>Método</span><span>ping com flag DF — busca binária ICMP</span></div>` +
+        `<div class="row"><span>Alvo</span><span>${r.target}</span></div>` +
+        (r.rtt != null ? `<div class="row"><span>RTT</span><span>${r.rtt} ms</span></div>` : '') +
+        `<div class="row"><span>Iterações</span><span>${r.steps.length} passos</span></div>` +
+        warnRow
+      );
+      setBadge(el, badge, badMtu ? 'falha' : lowMtu ? `${r.mtu}B` : 'ok');
+      return { ok: !badMtu, mtu: r.mtu };
+    }
+  } catch {}
+
+  // Fallback: aproximação via HTTPS quando servidor não está rodando
   try {
     const t0 = performance.now();
     await (await fetch('https://speed.cloudflare.com/__down?bytes=131072', { cache: 'no-store' })).arrayBuffer();
@@ -153,13 +187,12 @@ async function testMTU() {
 
     const mbps = (1024 * 8) / (ms1m / 1000) / 1000;
     const slow = ms1m > 12000;
-    const verdict = slow ? 'lento — possível problema de PMTUD' : 'transferência saudável';
 
-    setVal(el, verdict, !slow);
+    setVal(el, slow ? 'lento — possível problema de PMTUD' : 'transferência saudável', !slow);
     setMeta(el,
       `<div class="row"><span>128 KB</span><span>${ms128} ms</span></div>` +
       `<div class="row"><span>1 MB</span><span>${ms1m} ms · ${mbps.toFixed(2)} Mbps</span></div>` +
-      `<div class="row"><span>Nota</span><span>teste real de PMTUD requer ping com flag DF; isto é uma aproximação via HTTPS</span></div>`
+      `<div class="row"><span>Método</span><span>aproximação via HTTPS — execute <code>node server.js</code> para teste real com ping DF</span></div>`
     );
     setBadge(el, slow ? 'warn' : 'ok', slow ? 'slow' : 'ok');
     return { ok: !slow, mbps };
